@@ -2,7 +2,7 @@
 
 An open-source public transport router for Karachi. Plan a journey across BRT lines and Peoples Bus Service routes, with step-by-step directions, walking legs, and flag-down boarding for non-BRT buses.
 
-**Live demo:** https://YOURUSERNAME.github.io/karachi-transit-router
+**Live demo:** https://imbahramshafi.github.io/karachi-transit-router
 
 ## Why this exists
 
