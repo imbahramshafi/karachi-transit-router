@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Karachi Transit Router</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #00E676; --orange: #FF6D00; --purple: #7C4DFF;
+    --bg: #0A0A0F; --panel: #111118; --border: #1E1E2E; --text: #E8E8F0; --muted: #5A5A72;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { padding: 14px 24px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); background: var(--panel); z-index: 1000; flex-shrink: 0; }
+  .logo { font-size: 18px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--green); }
+  .tagline { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+  .badge { margin-left: auto; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--green); border: 1px solid var(--green); padding: 3px 8px; letter-spacing: 1px; opacity: 0.7; }
+  .main { display: flex; flex: 1; overflow: hidden; }
+  .sidebar { width: 340px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+  .search-section { padding: 20px; border-bottom: 1px solid var(--border); }
+  .section-label { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; }
+  .input-group { position: relative; margin-bottom: 10px; }
+  .input-dot { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; border-radius: 50%; z-index: 1; }
+  .input-dot.from { background: var(--green); }
+  .input-dot.to { background: var(--orange); }
+  .stop-input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 10px 12px 10px 30px; font-family: 'Syne', sans-serif; font-size: 13px; outline: none; transition: border-color 0.2s; }
+  .stop-input:focus { border-color: var(--green); }
+  .stop-input::placeholder { color: var(--muted); }
+  .autocomplete-list { position: absolute; top: 100%; left: 0; right: 0; background: var(--panel); border: 1px solid var(--border); border-top: none; z-index: 9999; max-height: 180px; overflow-y: auto; display: none; }
+  .autocomplete-list.show { display: block; }
+  .autocomplete-item { padding: 9px 12px 9px 30px; font-size: 12px; cursor: pointer; color: var(--text); border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  .autocomplete-item:hover { background: var(--border); }
+  .route-tag { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); margin-left: 6px; }
+  .btn-find { width: 100%; background: var(--green); color: #000; border: none; padding: 11px; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; letter-spacing: 0.5px; margin-top: 4px; transition: opacity 0.2s; }
+  .btn-find:hover { opacity: 0.85; }
+  .btn-locate {
+    width: 100%;
+    background: transparent;
+    color: var(--green);
+    border: 1px solid var(--border);
+    padding: 9px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+    transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-locate:hover { border-color: var(--green); background: rgba(0,230,118,0.05); }
+  .btn-locate:disabled { color: var(--muted); cursor: not-allowed; }
+  .btn-locate.active { color: var(--green); border-color: var(--green); }
+  .locate-icon { font-size: 14px; }
+  .my-location-pulse {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #00E676;
+    box-shadow: 0 0 0 4px rgba(0,230,118,0.3);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(0,230,118,0.3); }
+    50% { box-shadow: 0 0 0 8px rgba(0,230,118,0.1); }
+  }
+  .results-section { flex: 1; overflow-y: auto; }
+  .no-result { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); text-align: center; padding: 30px 16px; line-height: 1.8; }
+  .journey-header { padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--bg); }
+  .journey-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .journey-meta { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); }
+  .steps-list { padding: 16px; }
+  .step { display: flex; gap: 12px; position: relative; }
+  .step-left { display: flex; flex-direction: column; align-items: center; width: 30px; flex-shrink: 0; }
+  .step-icon { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; z-index: 1; font-weight: 700; font-family: 'Space Mono', monospace; }
+  .step-line { width: 2px; flex: 1; min-height: 18px; margin: 3px 0; opacity: 0.4; }
+  .step-body { padding: 4px 0 18px 0; flex: 1; min-width: 0; }
+  .step-action { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 3px; }
+  .step-main { font-size: 13px; font-weight: 700; line-height: 1.4; }
+  .step-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .step-via { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); margin-top: 6px; line-height: 1.7; word-break: break-word; }
+  .stops-pill { display: inline-block; margin-top: 6px; font-family: 'Space Mono', monospace; font-size: 10px; padding: 3px 8px; border-radius: 2px; }
+  .legend-section { padding: 14px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+  .legend-line { width: 24px; height: 3px; border-radius: 2px; }
+  #map { flex: 1; background: #0d0d1a; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+  .stop-tooltip { background: #111118; border: 1px solid #1E1E2E; color: #E8E8F0; font-family: 'Space Mono', monospace; font-size: 11px; padding: 4px 8px; border-radius: 0; box-shadow: none; }
+  .leaflet-popup-content-wrapper { background: #111118; border: 1px solid #1E1E2E; border-radius: 0; color: #E8E8F0; font-family: 'Syne', sans-serif; font-size: 12px; }
+  .leaflet-popup-tip { background: #111118; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">Karachi <span>Transit</span></div>
+    <div class="tagline">Public Transport Router</div>
+  </div>
+  <div class="badge">PROTOTYPE v0.1</div>
+</header>
+<div class="main">
+  <div class="sidebar">
+    <div class="search-section">
+      <div class="section-label">Plan Your Journey</div>
+      <div class="input-group">
+        <div class="input-dot from"></div>
+        <input class="stop-input" id="fromInput" placeholder="From: e.g. Tower, Saddar..." autocomplete="off"/>
+        <div class="autocomplete-list" id="fromList"></div>
+      </div>
+      <button class="btn-locate" id="locateBtn" onclick="useMyLocation()">
+        <span class="locate-icon">◎</span> Use my location
+      </button>
+      <div class="input-group">
+        <div class="input-dot to"></div>
+        <input class="stop-input" id="toInput" placeholder="To: e.g. Gulshan, Airport..." autocomplete="off"/>
+        <div class="autocomplete-list" id="toList"></div>
+      </div>
+      <button class="btn-find" onclick="findRoute()">Get Directions</button>
+    </div>
+    <div class="results-section" id="results">
+      <div class="no-result">Enter origin and destination<br>to get step-by-step directions</div>
+    </div>
+    <div class="legend-section">
+      <div class="section-label">Routes</div>
+      <div class="legend-item"><div class="legend-line" style="background:#00E676"></div> BRT Green Line (Surjani–Numaish)</div>
+      <div class="legend-item"><div class="legend-line" style="background:#FF6D00"></div> BRT Orange Line (Orangi–Board Office)</div>
+      <div class="legend-item"><div class="legend-line" style="background:#7C4DFF"></div> R9 Gulshan–Tower</div>
+      <div class="legend-item"><div class="legend-line" style="background:#FF4081"></div> R2 Power House–Indus</div>
+      <div class="legend-item" style="margin-top:8px; font-size:10px; color:var(--muted)">
+        <div style="width:24px; border-top: 2px dashed #00E676"></div>
+        Solid = fixed stops &nbsp;·&nbsp; Dashed = flag down anywhere
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+<script>
+const ROUTE_COLORS = {"BRT-Green Line":"#00E676","BRT-Orange Line":"#FF6D00","R9-Gulshan e Hadeed to Tower":"#7C4DFF","R2-Power House to Indus Hospital":"#FF4081"};
+const ROUTE_SHORT = {"BRT-Green Line":"BRT Green Line","BRT-Orange Line":"BRT Orange Line","R9-Gulshan e Hadeed to Tower":"R9 Bus","R2-Power House to Indus Hospital":"R2 Bus"};
+// Routes where you can flag the bus down anywhere along the road (no fixed stops)
+const FLAG_DOWN = {"BRT-Green Line":false,"BRT-Orange Line":false,"R9-Gulshan e Hadeed to Tower":true,"R2-Power House to Indus Hospital":true};
+
+const STOP_COORDS = {"Power House Chowrangi":[67.0656828,24.9857105],"Abdullah Chowk":[67.0636461,25.0235505],"Surjani KDA":[67.0639795,25.0183801],"Karimi Chowrangi":[67.0640065,25.0120368],"4K Chowrangi":[67.0644358,25.0064601],"Aisha Complex":[67.0656007,24.9964658],"Erum Shopping":[67.0643748,24.9608123],"KDA Chowrangi":[67.0375124,24.9314051],"Board Office":[67.0455094,24.9128333],"Annu Bhai Park":[67.0320351,24.9161211],"Model Park":[66.9982791,24.9551203],"Nazimabad No. 1":[67.0307183,24.905865],"Lasbela":[67.0345011,24.8857871],"Guru Mandir":[67.0411743,24.8795684],"Nazimabad No. 6":[67.0307183,24.905865],"Nazimabad No. 7":[67.0307183,24.905865],"District Court":[67.1179479,24.8179267],"Liaquatabad 10":[67.0386279,24.9029771],"Nagan Chowrangi":[67.0668664,24.9650421],"Sohrab Goth":[67.0897399,24.9505443],"Ayesha Manzil":[67.0642152,24.9267993],"Lucky One Mall":[67.0870913,24.9322928],"Gulshan Chowrangi":[67.0912849,24.9246131],"NIPA":[67.182327,24.9676856],"Johar Mor":[67.1135863,24.9046667],"Millennium Mall":[67.1152148,24.9015171],"National Stadium Karachi":[67.0816725,24.8952212],"Hasan Square":[67.0725224,24.9007046],"Essa Nagri":[67.0608428,24.8908093],"Eidgah Karachi":[67.0252,24.8755],"Kalapul":[67.0489213,24.8482773],"KDA Scheme 1":[67.0836475,24.8896835],"Maritime Museum Karachi":[67.0890607,24.8869931],"Sunset Boulevard Karachi":[67.0644474,24.8340928],"Dockyard Karachi":[66.9754306,24.8445452],"Tower Karachi":[66.9966678,24.8487556],"Jinnah Bridge Karachi":[66.9921868,24.8455623],"Keamari":[66.9840531,24.821889],"M.T. Khan Road":[67.0143605,24.8431024],"PIDC Karachi":[67.0248435,24.846516],"Frere Hall":[67.0330882,24.8475202],"Nursery Karachi":[67.0340256,24.8072924],"Lal Kothi Karachi":[67.0690638,24.8621502],"Awami Markaz":[67.0904141,24.870469],"Nazimabad":[67.0307183,24.905865],"Karimabad Karachi":[67.0591838,24.9233032],"Daak Khana":[67.0449142,24.9000835],"Teen Hatti":[67.0438165,24.8932027],"Jehangir Road":[67.0280331,24.8614877],"Mobile Market Karachi":[67.0254339,24.8633579],"Urdu Bazar Karachi":[67.0159713,24.8583311],"Jama Cloth Market":[67.0144873,24.8587823],"Civil Hospital Karachi":[67.0116782,24.8594455],"City Court Karachi":[67.0057203,24.8559541],"Bolton Market":[67.0022597,24.8523586],"I.I. Chundrigar Road":[67.0104449,24.8500789],"Art Council Karachi":[67.0219327,24.8531544],"Shaheen Complex":[67.0195102,24.8508147],"Metropole Karachi":[67.0301733,24.8504651],"Regent Plaza":[67.0401855,24.8548693],"FTC Karachi":[67.0517932,24.8582766],"KPT Interchange":[67.0809597,24.8312646],"Brookes Chowrangi":[67.099563,24.8345307],"Soorty Factory":[67.175,24.855],"Singer Chowrangi":[67.1816776,24.8505864],"Drigh Road":[67.1261891,24.8863153],"PAF Museum Karachi":[67.0958906,24.8703602],"Shah Faisal Colony 2":[67.145214,24.8810955],"Shama Shopping Center":[67.1455425,24.8847113],"Karsaz":[67.0989711,24.8778199],"Dolmen Mall Clifton":[67.0302623,24.8021172],"Bahria Complex 3":[67.003093,24.843933],"Khadda Market":[67.049954,24.8134814],"26th Street DHA":[67.0381097,24.8157977],"Teen Talwar":[67.0335694,24.8335775],"Do Talwar":[67.0340956,24.8210182],"Mohatta Palace Museum":[67.0326631,24.8142749],"Shireen Jinnah Colony":[66.9957814,24.8173568],"Ziauddin Hospital":[67.0033913,24.8163998],"Abdullah Shah Ghazi":[67.0301196,24.810977],"Sea View Karachi":[67.0426313,24.7909724],"Clifton Beach Karachi":[67.0103862,24.8105323],"Gulshan e Hadeed":[67.3525403,24.8646368],"Port Qasim":[67.3856091,24.8306545],"Quaidabad":[67.2140853,24.8532297],"Abdullah Goth":[67.2840661,24.8666315],"FAST University":[67.2646384,24.8569128],"Razzakabad":[67.2946275,24.8668724],"Malir 15":[67.1882644,24.8790242],"Saudabad Chowrangi":[67.2013094,24.9008268],"RCD Ground":[67.1963745,24.9004187],"Kalaboard":[67.1885868,24.8900563],"Malir Halt":[67.1745528,24.8844268],"Johar Chowrangi":[67.1138217,24.9240802],"Kamran Chowrangi":[67.137763,24.9237215],"Al Asif Square":[67.0915684,24.9510215],"Jinnah International Airport":[67.1614489,24.9058248],"Natha Khan":[67.1430482,24.8868895],"Shaheen Complex Karachi":[67.0195102,24.8508147],"2 Mint Chowrangi":[67.0644087,24.999079],"Sakhi Hasan Chowrangi":[67.056327,24.9593018],"Hyderi Bus Market":[67.0442897,24.9358312],"Shafiq Mor":[67.1028185,24.9306243],"Five Star Chowrangi":[67.0476057,24.9427233],"Aladdin Park":[67.0945,24.9305],"NMC Hospital Karachi":[67.1790702,24.833191],"Five Star Chowrangi Clifton":[67.0348843,24.8274523],"Fine House":[67.0361938,24.8730166],"Tibet Center":[67.0219172,24.862842],"City Railway Station Karachi":[67.0063849,24.8485925],"Aisha Bawany College":[67.0577068,24.9139223],"Imtiaz Store Korangi":[67.1031713,24.8202687],"Shaan Chowrangi":[67.1205513,24.8389515],"Khaddi Stop":[67.1403735,24.8206928],"Defence Morr":[67.0810075,24.8386777],"Submarine Chowk":[67.0282341,24.8205818],"Masjid-e-Ayesha DHA":[67.077886,24.8021793],"Clock Tower DHA":[67.0717581,24.8347329],"Masjid e Tooba":[67.0675729,24.8330376],"Steel Mill Mor":[67.3465824,24.805247],"Chowkundi Mor":[67.161,25.004],"Manzil Pump":[67.2262313,24.9519357],"Bhains Colony Mor":[67.2629334,24.8240238],"Malir Session Court":[67.1958399,24.8738548],"Nadra Center Malir":[67.3518124,24.8655523],"Murghikhana":[67.145214,24.8810955],"Check Post 6 Malir Cantt":[67.2262313,24.9519357],"Safoora Chowrangi":[67.1560824,24.9391381],"New Sabzi Mandi Karachi":[67.1095,25.0125],"Mausamiyat Karachi":[67.1265,25.0185],"M9 Toll Plaza":[67.1735,25.0345],"Jamali Pull":[67.082,24.9648],"Security Printing Press Karachi":[67.1808068,24.8893491],"Model Colony Mor":[67.1894182,24.9068326],"Baqai University":[67.2135668,24.9874768],"Numaish":[67.0298,24.8704],"Sanitary Market":[67.0322,24.883],"Enquiry Office":[67.0312,24.893],"Jummah Bazaar":[67.049,24.923],"UP More":[67.0772,24.9722],"Saleem Centre":[67.0668,24.9758],"Surjani Chowrangi":[67.0644,25.0064],"KDA Flats":[67.064,25.015],"Hyderi":[67.0442897,24.9358312],"2 Minute Chowrangi":[67.0644087,24.999079],"Orange:TMA Orangi":[66.9881,24.9518],"Orange:Pone Panch Chowrangi":[67.0007,24.9402],"Orange:Abdullah Chowrangi":[67.0142,24.9285],"Orange:Jinnah University":[67.0298,24.918],"Orange:Board Office":[67.0375124,24.9314051],"R2:Indus Hospital":[67.1318,24.8244],"R2:Shaan Chowrangi":[67.1205513,24.8389515],"R2:Brookes Chowrangi":[67.099563,24.8345307],"R2:Singer Chowrangi":[67.1816776,24.8505864],"R2:Shah Faisal Colony":[67.145214,24.8810955],"R2:Natha Khan":[67.1430482,24.8868895],"R2:Drigh Road":[67.1261891,24.8863153],"R2:Karsaz":[67.0989711,24.8778199],"R2:PAF Museum":[67.0958906,24.8703602],"R2:Millennium Mall":[67.1152148,24.9015171],"R2:Johar Mor":[67.1135863,24.9046667],"R2:NIPA":[67.0915,24.9215],"R2:Gulshan Chowrangi":[67.0912849,24.9246131],"R2:Lucky One Mall":[67.0870913,24.9322928],"R2:Ayesha Manzil":[67.0642152,24.9267993],"R2:Sohrab Goth":[67.0897399,24.9505443],"R2:Nagan Chowrangi":[67.0668664,24.9650421],"R2:Power House":[67.0656828,24.9857105]};
+
+const ROUTE_STOPS = {
+  "BRT-Green Line": ["Numaish","Guru Mandir","Lasbela","Sanitary Market","Nazimabad No. 1","Enquiry Office","Annu Bhai Park","Board Office","Hyderi","Five Star Chowrangi","Jummah Bazaar","Erum Shopping","Nagan Chowrangi","UP More","Saleem Centre","Power House Chowrangi","Aisha Complex","2 Minute Chowrangi","Surjani Chowrangi","Karimi Chowrangi","KDA Flats","Abdullah Chowk"],
+  "BRT-Orange Line": ["Orange:TMA Orangi","Orange:Pone Panch Chowrangi","Orange:Abdullah Chowrangi","Orange:Jinnah University","Orange:Board Office"],
+  "R9-Gulshan e Hadeed to Tower": ["Gulshan e Hadeed","Steel Mill Mor","Port Qasim","Razzakabad","Abdullah Goth","FAST University","Quaidabad","Bhains Colony Mor","Malir Halt","Malir 15","Natha Khan","Jinnah International Airport","Saudabad Chowrangi","RCD Ground","Kalaboard","Malir Session Court","Murghikhana","Kamran Chowrangi","Johar Chowrangi","Safoora Chowrangi","New Sabzi Mandi Karachi","Mausamiyat Karachi","M9 Toll Plaza","Al Asif Square","Sohrab Goth","Jamali Pull","Aladdin Park","Hyderi Bus Market","Shaheen Complex Karachi","I.I. Chundrigar Road","Tower Karachi"],
+  "R2-Power House to Indus Hospital": ["R2:Indus Hospital","R2:Shaan Chowrangi","R2:Brookes Chowrangi","R2:Natha Khan","R2:Shah Faisal Colony","R2:Drigh Road","R2:PAF Museum","R2:Karsaz","R2:Singer Chowrangi","R2:Millennium Mall","R2:Johar Mor","R2:NIPA","R2:Gulshan Chowrangi","R2:Lucky One Mall","R2:Ayesha Manzil","R2:Sohrab Goth","R2:Nagan Chowrangi","R2:Power House"]
+};
+
+const map = L.map('map', { center: [24.9, 67.08], zoom: 12 });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CartoDB', maxZoom: 19 }).addTo(map);
+
+// Background route lines — snap to roads via OSRM
+async function osrmDriving(coords) {
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords.map(c => `${c[0]},${c[1]}`).join(';')}?overview=full&geometries=geojson`;
+  try {
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.code === 'Ok' && data.routes[0]) {
+      return data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    }
+  } catch(e) {}
+  return null;
+}
+
+const ROAD_CACHE = {};  // route -> snapped coords [[lat,lon],...]
+
+async function drawBackgroundRoute(route, sl) {
+  const validCoords = sl.map(n => STOP_COORDS[n]).filter(Boolean);
+  if (validCoords.length < 2) return;
+
+  let snapped = null;
+  // OSRM URL length limit ~ 8KB, batch if >25 stops
+  if (validCoords.length > 25) {
+    snapped = [];
+    for (let i = 0; i < validCoords.length - 1; i += 24) {
+      const batch = validCoords.slice(i, Math.min(i + 25, validCoords.length));
+      const part = await osrmDriving(batch);
+      if (!part) { snapped = null; break; }
+      snapped = snapped.concat(part);
+    }
+  } else {
+    snapped = await osrmDriving(validCoords);
+  }
+
+  const final = snapped || validCoords.map(c => [c[1], c[0]]);
+  ROAD_CACHE[route] = final;
+
+  const isFlag = FLAG_DOWN[route];
+  L.polyline(final, {
+    color: ROUTE_COLORS[route],
+    weight: 3,
+    opacity: isFlag ? 0.30 : 0.25,
+    dashArray: isFlag ? '2 6' : null
+  }).addTo(map);
+}
+
+// Draw routes one at a time so the page doesn't stall
+(async () => {
+  for (const [route, sl] of Object.entries(ROUTE_STOPS)) {
+    await drawBackgroundRoute(route, sl);
+  }
+})();
+Object.entries(STOP_COORDS).forEach(([name, c]) => {
+  const route = Object.entries(ROUTE_STOPS).find(([r, sl]) => sl.includes(name));
+  const color = route ? ROUTE_COLORS[route[0]] : '#555';
+  L.circleMarker([c[1], c[0]], { radius: 3, fillColor: color, color: '#0A0A0F', weight: 1, fillOpacity: 0.45 })
+    .bindTooltip(displayName(name), { direction: 'top', className: 'stop-tooltip' }).addTo(map);
+});
+
+const allStops = [...new Set(Object.values(ROUTE_STOPS).flat())].sort();
+let highlightLayers = [];
+function clearHighlights() { highlightLayers.forEach(l => map.removeLayer(l)); highlightLayers = []; }
+
+function setupAutocomplete(inputId, listId) {
+  const input = document.getElementById(inputId), list = document.getElementById(listId);
+  input.addEventListener('input', () => {
+    const val = input.value.trim().toLowerCase();
+    list.innerHTML = '';
+    if (!val) { list.classList.remove('show'); return; }
+    const matches = allStops.filter(n => displayName(n).toLowerCase().includes(val) || n.toLowerCase().includes(val)).slice(0, 8);
+    if (!matches.length) { list.classList.remove('show'); return; }
+    matches.forEach(name => {
+      const route = Object.entries(ROUTE_STOPS).find(([r, sl]) => sl.includes(name));
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.innerHTML = `${displayName(name)}<span class="route-tag">${route ? ROUTE_SHORT[route[0]] : ''}</span>`;
+      item.onclick = () => {
+        input.value = displayName(name);
+        input.dataset.realStop = name;
+        list.classList.remove('show');
+      };
+      list.appendChild(item);
+    });
+    list.classList.add('show');
+  });
+  document.addEventListener('click', e => { if (!input.contains(e.target) && !list.contains(e.target)) list.classList.remove('show'); });
+}
+setupAutocomplete('fromInput', 'fromList');
+setupAutocomplete('toInput', 'toList');
+
+// User location handling
+let userLocation = null;  // [lon, lat]
+let userLocationMarker = null;
+const USER_LOCATION_KEY = '__MY_LOCATION__';
+
+function useMyLocation() {
+  const btn = document.getElementById('locateBtn');
+  const fromInput = document.getElementById('fromInput');
+
+  if (!navigator.geolocation) {
+    alert('Geolocation is not supported by your browser');
+    return;
+  }
+
+  btn.innerHTML = '<span class="locate-icon">◎</span> Locating...';
+  btn.disabled = true;
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lon = pos.coords.longitude;
+      const lat = pos.coords.latitude;
+      userLocation = [lon, lat];
+
+      // Check if user is in Karachi bbox
+      if (lat < 24.7 || lat > 25.15 || lon < 66.9 || lon > 67.5) {
+        btn.innerHTML = '<span class="locate-icon">⚠</span> Outside Karachi';
+        btn.disabled = false;
+        alert(`Your location appears to be outside Karachi (${lat.toFixed(3)}, ${lon.toFixed(3)}). This prototype only covers Karachi routes.`);
+        userLocation = null;
+        return;
+      }
+
+      // Drop a pulsing marker on the map
+      if (userLocationMarker) map.removeLayer(userLocationMarker);
+      const icon = L.divIcon({
+        className: 'user-loc-icon',
+        html: '<div class="my-location-pulse"></div>',
+        iconSize: [14, 14],
+        iconAnchor: [7, 7]
+      });
+      userLocationMarker = L.marker([lat, lon], { icon, zIndexOffset: 1000 })
+        .bindPopup('You are here')
+        .addTo(map);
+
+      // Find nearest stop info for display
+      const nearest = findNearestStop([lon, lat]);
+      fromInput.value = `My location (near ${displayName(nearest.stop)})`;
+      fromInput.dataset.isMyLocation = 'true';
+
+      btn.innerHTML = '<span class="locate-icon">◉</span> Location set';
+      btn.classList.add('active');
+      btn.disabled = false;
+
+      map.setView([lat, lon], 14);
+    },
+    err => {
+      let msg = 'Could not get your location';
+      if (err.code === 1) msg = 'Location permission denied';
+      else if (err.code === 2) msg = 'Location unavailable';
+      else if (err.code === 3) msg = 'Location request timed out';
+      btn.innerHTML = '<span class="locate-icon">◎</span> Use my location';
+      btn.disabled = false;
+      alert(msg);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  );
+}
+
+function findNearestStop(coord) {
+  let best = null;
+  for (const [name, c] of Object.entries(STOP_COORDS)) {
+    const d = haversineKm(coord, c);
+    if (!best || d < best.distance) best = { stop: name, distance: d };
+  }
+  return best;
+}
+
+// Clear location flag when user types into From manually
+document.getElementById('fromInput').addEventListener('input', () => {
+  const inp = document.getElementById('fromInput');
+  inp.dataset.realStop = '';
+  if (inp.dataset.isMyLocation === 'true') {
+    inp.dataset.isMyLocation = 'false';
+    const btn = document.getElementById('locateBtn');
+    btn.classList.remove('active');
+    btn.innerHTML = '<span class="locate-icon">◎</span> Use my location';
+    userLocation = null;
+    if (userLocationMarker) { map.removeLayer(userLocationMarker); userLocationMarker = null; }
+  }
+});
+document.getElementById('toInput').addEventListener('input', () => {
+  document.getElementById('toInput').dataset.realStop = '';
+});
+
+function norm(s) { return s.trim().toLowerCase(); }
+
+// Strip R2: prefix etc for nicer display
+function displayName(stopName) {
+  if (!stopName) return stopName;
+  const i = stopName.indexOf(':');
+  return i > -1 ? stopName.slice(i + 1) : stopName;
+}
+
+// Max walking distance in km (~15 min at 5 km/h)
+const MAX_WALK_KM = 1.2;
+const WALK_SPEED_KMH = 5;
+
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b[1] - a[1]) * Math.PI / 180;
+  const dLon = (b[0] - a[0]) * Math.PI / 180;
+  const lat1 = a[1] * Math.PI / 180;
+  const lat2 = b[1] * Math.PI / 180;
+  const x = Math.sin(dLat/2)**2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+function walkMinutes(km) {
+  return Math.max(1, Math.round((km / WALK_SPEED_KMH) * 60));
+}
+
+// Find closest point on a line segment ab to point p, all in [lon, lat]
+// Uses simple equirectangular projection — fine at city scale
+function closestPointOnSegment(p, a, b) {
+  const meanLat = (a[1] + b[1]) / 2;
+  const kx = Math.cos(meanLat * Math.PI / 180);
+  // project to x,y in degrees but scale x by cos(lat)
+  const ax = a[0] * kx, ay = a[1];
+  const bx = b[0] * kx, by = b[1];
+  const px = p[0] * kx, py = p[1];
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx*dx + dy*dy;
+  let t = len2 === 0 ? 0 : ((px-ax)*dx + (py-ay)*dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + t*dx, cy = ay + t*dy;
+  return { point: [cx / kx, cy], t, segmentIndex: null };
+}
+
+// Find nearest point on a route's polyline (between any two consecutive stops)
+// Returns { point: [lon,lat], distance, beforeStop, afterStop, t }
+function nearestPointOnRouteLine(route, p) {
+  const stops = ROUTE_STOPS[route];
+  let best = null;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = STOP_COORDS[stops[i]];
+    const b = STOP_COORDS[stops[i+1]];
+    if (!a || !b) continue;
+    const cp = closestPointOnSegment(p, a, b);
+    const d = haversineKm(p, cp.point);
+    if (!best || d < best.distance) {
+      best = { point: cp.point, distance: d, beforeStop: stops[i], afterStop: stops[i+1], t: cp.t, segmentIndex: i };
+    }
+  }
+  return best;
+}
+
+// Find stops on a route within walking distance of target
+function nearbyStopsOnRoute(route, targetCoord, maxKm = MAX_WALK_KM) {
+  const sl = ROUTE_STOPS[route];
+  const candidates = [];
+  for (const stop of sl) {
+    const c = STOP_COORDS[stop];
+    if (!c) continue;
+    const d = haversineKm(targetCoord, c);
+    if (d <= maxKm) candidates.push({ stop, distance: d, isFlagDown: false });
+  }
+  candidates.sort((a, b) => a.distance - b.distance);
+  return candidates;
+}
+
+// For flag-down routes, also include nearest road-point as a possible boarding location
+function nearbyBoardingPoints(route, targetCoord, maxKm = MAX_WALK_KM) {
+  const stops = nearbyStopsOnRoute(route, targetCoord, maxKm);
+  if (!FLAG_DOWN[route]) return stops;
+
+  // Also try nearest point on the route line
+  const onRoute = nearestPointOnRouteLine(route, targetCoord);
+  if (onRoute && onRoute.distance <= maxKm) {
+    // Don't add if there's already a stop just as close (within 100m)
+    const tooClose = stops.length && Math.abs(stops[0].distance - onRoute.distance) < 0.1;
+    if (!tooClose) {
+      stops.push({
+        stop: null,                 // no stop — flag-down point
+        coord: onRoute.point,
+        distance: onRoute.distance,
+        isFlagDown: true,
+        beforeStop: onRoute.beforeStop,
+        afterStop: onRoute.afterStop,
+        segmentIndex: onRoute.segmentIndex,
+        t: onRoute.t,
+      });
+      stops.sort((a, b) => a.distance - b.distance);
+    }
+  }
+  return stops;
+}
+
+function getSegment(route, from, to) {
+  const sl = ROUTE_STOPS[route];
+  const fi = sl.findIndex(s => norm(s) === norm(from));
+  const ti = sl.findIndex(s => norm(s) === norm(to));
+  if (fi === -1 || ti === -1) return null;
+  return fi <= ti ? sl.slice(fi, ti + 1) : sl.slice(ti, fi + 1).reverse();
+}
+
+function isOnRoute(stop, route) {
+  return ROUTE_STOPS[route].some(s => norm(s) === norm(stop));
+}
+
+async function findRoute() {
+  const fromInput = document.getElementById('fromInput');
+  const toInput = document.getElementById('toInput');
+  const resultsEl = document.getElementById('results');
+
+  // Use realStop (from autocomplete pick) if available, else raw input
+  const usingMyLocation = fromInput.dataset.isMyLocation === 'true' && userLocation;
+  const fromText = fromInput.value.trim();
+  const toText = toInput.value.trim();
+  const fromReal = fromInput.dataset.realStop && displayName(fromInput.dataset.realStop) === fromText
+    ? fromInput.dataset.realStop : fromText;
+  const toReal = toInput.dataset.realStop && displayName(toInput.dataset.realStop) === toText
+    ? toInput.dataset.realStop : toText;
+
+  const from = usingMyLocation ? USER_LOCATION_KEY : fromReal;
+  const to = toReal;
+  const fromLabel = usingMyLocation ? 'My location' : displayName(from);
+
+  if (!from || !to) { resultsEl.innerHTML = '<div class="no-result">Enter both origin and destination</div>'; return; }
+  if (!usingMyLocation && norm(from) === norm(to)) {
+    resultsEl.innerHTML = '<div class="no-result">Origin and destination are the same</div>';
+    return;
+  }
+
+  clearHighlights();
+
+  // Helper: given the user's origin coord (or stop name), find boarding options on a route
+  function getFromBoardingOptions(route) {
+    if (usingMyLocation) {
+      return nearbyBoardingPoints(route, userLocation);
+    }
+    if (isOnRoute(from, route)) return [{ stop: from, distance: 0, isFlagDown: false }];
+    const fromCoord = STOP_COORDS[from];
+    if (!fromCoord) return [];
+    return nearbyBoardingPoints(route, fromCoord);
+  }
+
+  function getToAlightOptions(route) {
+    if (isOnRoute(to, route)) return [{ stop: to, distance: 0, isFlagDown: false }];
+    const toCoord = STOP_COORDS[to];
+    if (!toCoord) return [];
+    return nearbyBoardingPoints(route, toCoord);
+  }
+
+  // 1. Try direct (no walking) — only if from is already a stop on the route
+  if (!usingMyLocation) {
+    for (const route of Object.keys(ROUTE_STOPS)) {
+      const seg = getSegment(route, from, to);
+      if (seg) { await renderDirect(route, seg, null, null); return; }
+    }
+  }
+
+  // 2. Try direct with walking and/or flag-down boarding/alighting
+  const walkOptions = [];
+  for (const route of Object.keys(ROUTE_STOPS)) {
+    const fromOpts = getFromBoardingOptions(route);
+    const toOpts = getToAlightOptions(route);
+    if (fromOpts.length === 0 || toOpts.length === 0) continue;
+
+    for (const fo of fromOpts.slice(0, 3)) {
+      for (const ta of toOpts.slice(0, 3)) {
+        // Determine ride segment. If flag-down, use beforeStop as conceptual boarding stop
+        const boardStop = fo.isFlagDown ? fo.beforeStop : fo.stop;
+        const alightStop = ta.isFlagDown ? ta.afterStop : ta.stop;
+        if (!boardStop || !alightStop) continue;
+        if (norm(boardStop) === norm(alightStop)) continue;
+        const seg = getSegment(route, boardStop, alightStop);
+        if (!seg) continue;
+
+        const fromCoordForWalk = usingMyLocation ? userLocation : STOP_COORDS[from];
+        walkOptions.push({
+          route,
+          segment: seg,
+          walkFrom: (usingMyLocation || fo.distance > 0) ? {
+            from: fromLabel,
+            fromCoord: fromCoordForWalk,
+            toStop: fo.isFlagDown ? null : fo.stop,
+            toCoord: fo.isFlagDown ? fo.coord : STOP_COORDS[fo.stop],
+            km: fo.distance,
+            isFlagDown: fo.isFlagDown,
+            betweenStops: fo.isFlagDown ? [fo.beforeStop, fo.afterStop] : null
+          } : null,
+          walkTo: (ta.distance > 0) ? {
+            fromStop: ta.isFlagDown ? null : ta.stop,
+            fromCoord: ta.isFlagDown ? ta.coord : STOP_COORDS[ta.stop],
+            to,
+            toCoord: STOP_COORDS[to],
+            km: ta.distance,
+            isFlagDown: ta.isFlagDown,
+            betweenStops: ta.isFlagDown ? [ta.beforeStop, ta.afterStop] : null
+          } : null,
+          totalWalkKm: fo.distance + ta.distance
+        });
+      }
+    }
+  }
+
+  if (walkOptions.length > 0) {
+    walkOptions.sort((a, b) => a.totalWalkKm - b.totalWalkKm);
+    const best = walkOptions[0];
+    await renderDirect(best.route, best.segment, best.walkFrom, best.walkTo);
+    return;
+  }
+
+  // 3. Try transfer (works for any origin: location, near-stop, or stop)
+  const MAX_TRANSFER_WALK_KM = 0.8;
+  const transferOptions = [];
+
+  for (const r1 of Object.keys(ROUTE_STOPS)) {
+    for (const r2 of Object.keys(ROUTE_STOPS)) {
+      if (r1 === r2) continue;
+      const sl1 = ROUTE_STOPS[r1], sl2 = ROUTE_STOPS[r2];
+
+      // Origin boarding options on r1 (may need walking from user location)
+      const fromOpts = getFromBoardingOptions(r1);
+      if (fromOpts.length === 0) continue;
+
+      // Destination alighting options on r2 (may need walking at the end)
+      const toOpts = getToAlightOptions(r2);
+      if (toOpts.length === 0) continue;
+
+      // Find common stops AND nearby-stop pairs between r1 and r2
+      const transferPairs = [];
+
+      // Same-stop transfers
+      for (const s1 of sl1) {
+        if (sl2.some(s2 => norm(s2) === norm(s1))) {
+          transferPairs.push({ s1, s2: s1, walkKm: 0 });
+        }
+      }
+
+      // Walking transfers (nearby pairs on different routes)
+      for (const s1 of sl1) {
+        const c1 = STOP_COORDS[s1]; if (!c1) continue;
+        for (const s2 of sl2) {
+          if (norm(s1) === norm(s2)) continue;
+          const c2 = STOP_COORDS[s2]; if (!c2) continue;
+          const d = haversineKm(c1, c2);
+          if (d > 0.05 && d <= MAX_TRANSFER_WALK_KM) {
+            transferPairs.push({ s1, s2, walkKm: d });
+          }
+        }
+      }
+
+      // Try each combination of boarding + transfer + alighting
+      for (const fo of fromOpts.slice(0, 3)) {
+        const boardStop = fo.isFlagDown ? fo.beforeStop : fo.stop;
+        if (!boardStop) continue;
+
+        for (const tp of transferPairs) {
+          if (norm(tp.s1) === norm(boardStop)) continue;
+          const seg1 = getSegment(r1, boardStop, tp.s1);
+          if (!seg1) continue;
+
+          for (const ta of toOpts.slice(0, 3)) {
+            const alightStop = ta.isFlagDown ? ta.afterStop : ta.stop;
+            if (!alightStop) continue;
+            if (norm(tp.s2) === norm(alightStop)) continue;
+            const seg2 = getSegment(r2, tp.s2, alightStop);
+            if (!seg2) continue;
+
+            const fromCoordForWalk = usingMyLocation ? userLocation : STOP_COORDS[from];
+
+            transferOptions.push({
+              r1, seg1, r2, seg2,
+              transferFrom: tp.s1, transferTo: tp.s2,
+              walkKm: tp.walkKm,
+              walkFrom: (usingMyLocation || fo.distance > 0) ? {
+                from: fromLabel,
+                fromCoord: fromCoordForWalk,
+                toStop: fo.isFlagDown ? null : fo.stop,
+                toCoord: fo.isFlagDown ? fo.coord : STOP_COORDS[fo.stop],
+                km: fo.distance,
+                isFlagDown: fo.isFlagDown,
+                betweenStops: fo.isFlagDown ? [fo.beforeStop, fo.afterStop] : null
+              } : null,
+              walkTo: (ta.distance > 0) ? {
+                fromStop: ta.isFlagDown ? null : ta.stop,
+                fromCoord: ta.isFlagDown ? ta.coord : STOP_COORDS[ta.stop],
+                to,
+                toCoord: STOP_COORDS[to],
+                km: ta.distance,
+                isFlagDown: ta.isFlagDown,
+                betweenStops: ta.isFlagDown ? [ta.beforeStop, ta.afterStop] : null
+              } : null,
+              totalWalkKm: (fo.distance || 0) + (ta.distance || 0) + tp.walkKm,
+              totalStops: (seg1.length - 1) + (seg2.length - 1)
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if (transferOptions.length > 0) {
+    transferOptions.sort((a, b) => {
+      const scoreA = a.totalStops + (a.totalWalkKm * 5);
+      const scoreB = b.totalStops + (b.totalWalkKm * 5);
+      return scoreA - scoreB;
+    });
+    const best = transferOptions[0];
+    await renderTransfer(best.r1, best.seg1, best.r2, best.seg2, best.transferFrom, best.transferTo, best.walkKm, best.walkFrom, best.walkTo);
+    return;
+  }
+
+  resultsEl.innerHTML = `<div class="no-result">No route found from<br><b>${fromLabel}</b><br>to<br><b>${displayName(to)}</b><br><br>Try a stop within ${MAX_WALK_KM} km walking distance</div>`;
+}
+
+async function fetchRoadPath(stops) {
+  const validCoords = stops.map(n => STOP_COORDS[n]).filter(Boolean);
+  if (validCoords.length < 2) return null;
+  // OSRM has URL length limits, batch if too many stops
+  if (validCoords.length > 25) {
+    const batches = [];
+    for (let i = 0; i < validCoords.length - 1; i += 24) {
+      batches.push(validCoords.slice(i, Math.min(i + 25, validCoords.length)));
+    }
+    let allCoords = [];
+    for (const batch of batches) {
+      const result = await osrmRequest(batch);
+      if (!result) return null;
+      allCoords = allCoords.concat(result);
+    }
+    return allCoords;
+  }
+  return await osrmRequest(validCoords);
+}
+
+async function osrmRequest(coords) {
+  const coordStr = coords.map(c => `${c[0]},${c[1]}`).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+  try {
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.code === 'Ok' && data.routes[0]) {
+      return data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    }
+  } catch(e) { console.warn('OSRM error', e); }
+  return null;
+}
+
+async function drawSeg(stops, route, bounds) {
+  const color = ROUTE_COLORS[route];
+  const fallbackCoords = stops.map(n => STOP_COORDS[n]).filter(Boolean).map(c => [c[1], c[0]]);
+
+  stops.forEach((name, i) => {
+    const c = STOP_COORDS[name]; if (!c) return;
+    const isEnd = i === 0 || i === stops.length - 1;
+    const m = L.circleMarker([c[1], c[0]], { radius: isEnd ? 9 : 5, fillColor: isEnd ? '#fff' : color, color, weight: 2, fillOpacity: 1 })
+      .bindPopup(`<b>${displayName(name)}</b><br><span style="color:${color}">${ROUTE_SHORT[route]}</span>`).addTo(map);
+    highlightLayers.push(m);
+    if (isEnd) bounds.push([c[1], c[0]]);
+  });
+
+  const roadCoords = await fetchRoadPath(stops);
+  const finalCoords = roadCoords || fallbackCoords;
+  finalCoords.forEach(c => bounds.push(c));
+  const l = L.polyline(finalCoords, { color, weight: 5, opacity: 0.9 }).addTo(map);
+  highlightLayers.push(l);
+}
+
+function buildStepHTML(icon, iconBg, iconColor, action, actionColor, main, sub, via, stopCount, lineColor, showLine) {
+  return `
+    <div class="step">
+      <div class="step-left">
+        <div class="step-icon" style="background:${iconBg};color:${iconColor};border:1.5px solid ${iconColor}">${icon}</div>
+        ${showLine ? `<div class="step-line" style="background:${lineColor}"></div>` : ''}
+      </div>
+      <div class="step-body">
+        <div class="step-action" style="color:${actionColor}">${action}</div>
+        <div class="step-main">${main}</div>
+        ${sub ? `<div class="step-sub">${sub}</div>` : ''}
+        ${via ? `<div class="step-via">${via}</div>` : ''}
+        ${stopCount ? `<div class="stops-pill" style="background:${iconColor}18;color:${iconColor}">${stopCount} stop${stopCount>1?'s':''}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+async function drawWalkLeg(fromArg, toArg, bounds) {
+  // Both args can be a stop name string OR a [lon, lat] coordinate
+  const a = Array.isArray(fromArg) ? fromArg : STOP_COORDS[fromArg];
+  const b = Array.isArray(toArg) ? toArg : STOP_COORDS[toArg];
+  if (!a || !b) return;
+
+  const url = `https://router.project-osrm.org/route/v1/foot/${a[0]},${a[1]};${b[0]},${b[1]}?overview=full&geometries=geojson`;
+  let coords = null;
+  try {
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.code === 'Ok' && data.routes[0]) {
+      coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    }
+  } catch(e) {}
+  if (!coords) coords = [[a[1], a[0]], [b[1], b[0]]];
+
+  const line = L.polyline(coords, {
+    color: '#9CA3AF',
+    weight: 4,
+    opacity: 0.85,
+    dashArray: '2 8',
+    lineCap: 'round'
+  }).addTo(map);
+  highlightLayers.push(line);
+  coords.forEach(c => bounds.push(c));
+}
+
+async function renderDirect(route, stops, walkFrom, walkTo) {
+  const color = ROUTE_COLORS[route];
+  const short = ROUTE_SHORT[route];
+  const isFlagDownRoute = FLAG_DOWN[route];
+  const n = stops.length - 1;
+  const rideMin = Math.round(n * 2.2);
+  const walkFromMin = walkFrom ? walkMinutes(walkFrom.km) : 0;
+  const walkToMin = walkTo ? walkMinutes(walkTo.km) : 0;
+  const totalMin = rideMin + walkFromMin + walkToMin;
+
+  document.getElementById('results').innerHTML = `<div class="no-result" style="color:${color}">Mapping route on roads...</div>`;
+  const bounds = [];
+
+  if (walkFrom) {
+    const walkStart = walkFrom.fromCoord || walkFrom.from;
+    const walkEnd = walkFrom.toCoord || walkFrom.toStop;
+    await drawWalkLeg(walkStart, walkEnd, bounds);
+  }
+  await drawSeg(stops, route, bounds);
+  if (walkTo) {
+    const walkStart = walkTo.fromCoord || walkTo.fromStop;
+    const walkEnd = walkTo.toCoord || walkTo.to;
+    await drawWalkLeg(walkStart, walkEnd, bounds);
+  }
+
+  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+
+  // Display stops cleanly
+  const dispBoard = displayName(walkFrom && walkFrom.isFlagDown ? null : stops[0]);
+  const dispAlight = displayName(walkTo && walkTo.isFlagDown ? null : stops[stops.length-1]);
+  const viaStops = stops.slice(1, -1).map(displayName);
+  const via = viaStops.length ? viaStops.join(' &rarr; ') : null;
+  const journeyTitle = `${walkFrom ? displayName(walkFrom.from) : displayName(stops[0])} &rarr; ${walkTo ? displayName(walkTo.to) : displayName(stops[stops.length-1])}`;
+  const hasWalk = walkFrom || walkTo;
+
+  let html = `
+    <div class="journey-header">
+      <div class="journey-title">${journeyTitle}</div>
+      <div class="journey-meta">~${totalMin} min &nbsp;·&nbsp; ${n} stop${n>1?'s':''} &nbsp;·&nbsp; ${hasWalk ? 'Walk + bus' : 'Direct'}</div>
+    </div>
+    <div class="steps-list">
+  `;
+
+  // Walk-from step
+  if (walkFrom) {
+    if (walkFrom.isFlagDown) {
+      const between = walkFrom.betweenStops.map(displayName).join(' / ');
+      html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${walkFromMin} min`, '#9CA3AF',
+        `to the road`, `${(walkFrom.km).toFixed(2)} km · between ${between}`, null, null, color, true);
+      html += buildStepHTML('✋', color+'22', color, `Flag down ${short}`, color, `${short}`,
+        `Wave it down on the road · no fixed stop here`, null, null, color, true);
+    } else {
+      html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${walkFromMin} min`, '#9CA3AF',
+        `to <b>${displayName(walkFrom.toStop)}</b>`, `${(walkFrom.km).toFixed(2)} km`, null, null, color, true);
+      html += buildStepHTML('↑', color+'22', color, 'Board', color, short, `at <b>${displayName(walkFrom.toStop)}</b>`, null, null, color, true);
+    }
+  } else {
+    html += buildStepHTML('↑', color+'22', color, 'Board', color, short, `at <b>${displayName(stops[0])}</b>`, null, null, color, true);
+  }
+
+  // Ride
+  if (via) html += buildStepHTML('→', '#1a1a2e', color, `Ride ${n} stop${n>1?'s':''}`, color, `towards ${displayName(stops[stops.length-1])}`, null, via, n, color, true);
+
+  // Walk-to step
+  if (walkTo) {
+    if (walkTo.isFlagDown) {
+      const between = walkTo.betweenStops.map(displayName).join(' / ');
+      html += buildStepHTML('✋', color+'22', color, 'Ask to get off', color, `between ${between}`,
+        `Tell the conductor to drop you on the road`, null, null, '#9CA3AF', true);
+      html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${walkToMin} min`, '#9CA3AF',
+        `to <b>${displayName(walkTo.to)}</b>`, `${(walkTo.km).toFixed(2)} km`, null, null, null, false);
+    } else {
+      html += buildStepHTML('✓', '#FFD60022', '#FFD600', 'Alight', '#FFD600', displayName(stops[stops.length-1]), `Get off here`, null, null, '#9CA3AF', true);
+      html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${walkToMin} min`, '#9CA3AF',
+        `to <b>${displayName(walkTo.to)}</b>`, `from ${displayName(walkTo.fromStop)} · ${(walkTo.km).toFixed(2)} km`, null, null, null, false);
+    }
+  } else {
+    html += buildStepHTML('✓', '#FFD60022', '#FFD600', 'Alight here', '#FFD600', displayName(stops[stops.length-1]), 'End of your journey', null, null, null, false);
+  }
+
+  html += '</div>';
+  document.getElementById('results').innerHTML = html;
+}
+
+async function renderTransfer(r1, stops1, r2, stops2, transferFrom, transferTo, walkKm, walkFrom, walkTo) {
+  // walkFrom: walk from origin (location/stop) to boarding stop on r1
+  // walkTo: walk from alighting stop on r2 to destination
+  // walkKm: walking distance at the transfer between r1 alighting and r2 boarding
+  walkKm = walkKm || 0;
+  const c1 = ROUTE_COLORS[r1], c2 = ROUTE_COLORS[r2];
+  const n1 = stops1.length - 1, n2 = stops2.length - 1;
+  const total = n1 + n2;
+  const transferWalkMin = walkKm > 0 ? walkMinutes(walkKm) : 0;
+  const walkFromMin = walkFrom ? walkMinutes(walkFrom.km) : 0;
+  const walkToMin = walkTo ? walkMinutes(walkTo.km) : 0;
+  const rideMin = total * 2.2;
+  const estMin = Math.round(rideMin + 5 + transferWalkMin + walkFromMin + walkToMin);
+
+  document.getElementById('results').innerHTML = `<div class="no-result" style="color:${c1}">Mapping route on roads...</div>`;
+  const bounds = [];
+
+  // Walk from origin
+  if (walkFrom) {
+    const walkStart = walkFrom.fromCoord || walkFrom.from;
+    const walkEnd = walkFrom.toCoord || walkFrom.toStop;
+    await drawWalkLeg(walkStart, walkEnd, bounds);
+  }
+
+  await drawSeg(stops1, r1, bounds);
+
+  if (walkKm > 0) {
+    await drawWalkLeg(transferFrom, transferTo, bounds);
+  }
+
+  await drawSeg(stops2, r2, bounds);
+
+  // Walk to destination
+  if (walkTo) {
+    const walkStart = walkTo.fromCoord || walkTo.fromStop;
+    const walkEnd = walkTo.toCoord || walkTo.to;
+    await drawWalkLeg(walkStart, walkEnd, bounds);
+  }
+
+  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+
+  const transferType = walkKm > 0
+    ? `Transfer + ${transferWalkMin}m walk`
+    : '1 Transfer';
+  const totalWalkMin = walkFromMin + walkToMin + transferWalkMin;
+  const summary = totalWalkMin > 0 ? `${transferType} · ${totalWalkMin}m walking` : transferType;
+  const journeyTitle = `${walkFrom ? displayName(walkFrom.from) : displayName(stops1[0])} &rarr; ${walkTo ? displayName(walkTo.to) : displayName(stops2[stops2.length-1])}`;
+
+  let html = `
+    <div class="journey-header">
+      <div class="journey-title">${journeyTitle}</div>
+      <div class="journey-meta">~${estMin} min &nbsp;·&nbsp; ${total} stops &nbsp;·&nbsp; ${summary}</div>
+    </div>
+    <div class="steps-list">
+  `;
+
+  // Walk-from step at origin
+  if (walkFrom) {
+    if (walkFrom.isFlagDown) {
+      const between = walkFrom.betweenStops.map(displayName).join(' / ');
+      html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${walkFromMin} min`, '#9CA3AF',
+        `to the road`, `${(walkFrom.km).toFixed(2)} km · between ${between}`, null, null, c1, true);
+      html += buildStepHTML('✋', c1+'22', c1, `Flag down ${ROUTE_SHORT[r1]}`, c1, ROUTE_SHORT[r1],
+        `Wave it down on the road · no fixed stop here`, null, null, c1, true);
+    } else {
+      html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${walkFromMin} min`, '#9CA3AF',
+        `to <b>${displayName(walkFrom.toStop)}</b>`, `${(walkFrom.km).toFixed(2)} km`, null, null, c1, true);
+      html += buildStepHTML('↑', c1+'22', c1, 'Board', c1, ROUTE_SHORT[r1], `at <b>${displayName(walkFrom.toStop)}</b>`, null, null, c1, true);
+    }
+  } else {
+    html += buildStepHTML('↑', c1+'22', c1, 'Board', c1, ROUTE_SHORT[r1], `at <b>${displayName(stops1[0])}</b>`, null, null, c1, true);
+  }
+
+  if (n1 > 1) html += buildStepHTML('→', '#1a1a2e', c1, `Ride ${n1} stop${n1>1?'s':''}`, c1, `towards ${displayName(transferFrom)}`, null, stops1.slice(1,-1).map(displayName).join(' &rarr; '), n1, c1, true);
+
+  // Transfer step (with or without walking)
+  if (walkKm > 0) {
+    html += buildStepHTML('✓', '#FFD60022', '#FFD600', 'Alight', '#FFD600', displayName(transferFrom), `Get off ${ROUTE_SHORT[r1]}`, null, null, '#9CA3AF', true);
+    html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${transferWalkMin} min`, '#9CA3AF',
+      `to <b>${displayName(transferTo)}</b>`, `transfer · ${(walkKm).toFixed(2)} km`, null, null, c2, true);
+    html += buildStepHTML('↑', c2+'22', c2, 'Board', c2, ROUTE_SHORT[r2], `at <b>${displayName(transferTo)}</b>`, null, null, c2, true);
+  } else {
+    html += buildStepHTML('⇄', '#FFD60022', '#FFD600', 'Transfer', '#FFD600', displayName(transferFrom), `Get off &amp; switch to ${ROUTE_SHORT[r2]}`, null, null, c2, true);
+    html += buildStepHTML('↑', c2+'22', c2, 'Board', c2, ROUTE_SHORT[r2], `at <b>${displayName(transferTo)}</b>`, null, null, c2, true);
+  }
+
+  if (n2 > 1) html += buildStepHTML('→', '#1a1a2e', c2, `Ride ${n2} stop${n2>1?'s':''}`, c2, `towards ${displayName(stops2[stops2.length-1])}`, null, stops2.slice(1,-1).map(displayName).join(' &rarr; '), n2, c2, true);
+
+  // Walk-to step at destination
+  if (walkTo) {
+    if (walkTo.isFlagDown) {
+      const between = walkTo.betweenStops.map(displayName).join(' / ');
+      html += buildStepHTML('✋', c2+'22', c2, 'Ask to get off', c2, `between ${between}`,
+        `Tell the conductor to drop you on the road`, null, null, '#9CA3AF', true);
+      html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${walkToMin} min`, '#9CA3AF',
+        `to <b>${displayName(walkTo.to)}</b>`, `${(walkTo.km).toFixed(2)} km`, null, null, null, false);
+    } else {
+      html += buildStepHTML('✓', '#FFD60022', '#FFD600', 'Alight', '#FFD600', displayName(stops2[stops2.length-1]), 'Get off here', null, null, '#9CA3AF', true);
+      html += buildStepHTML('🚶', '#9CA3AF22', '#9CA3AF', `Walk ~${walkToMin} min`, '#9CA3AF',
+        `to <b>${displayName(walkTo.to)}</b>`, `from ${displayName(walkTo.fromStop)} · ${(walkTo.km).toFixed(2)} km`, null, null, null, false);
+    }
+  } else {
+    html += buildStepHTML('✓', '#FFD60022', '#FFD600', 'Alight here', '#FFD600', displayName(stops2[stops2.length-1]), 'End of your journey', null, null, null, false);
+  }
+
+  html += '</div>';
+  document.getElementById('results').innerHTML = html;
+}
+
+document.getElementById('fromInput').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('toInput').focus(); });
+document.getElementById('toInput').addEventListener('keydown', e => { if (e.key === 'Enter') findRoute(); });
+</script>
+</body>
+</html>
